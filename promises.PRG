@@ -229,6 +229,9 @@ DEFINE CLASS IntervalCallable as Callable
     ENDPROC
 
     PROCEDURE ClearInterval
+        IF PEMSTATUS(_VFP, "_Intervals", 5) = .F.
+            RETURN
+        ENDIF
         IF VARTYPE(_VFP._Intervals) != "O"
             RETURN
         ENDIF
@@ -258,6 +261,9 @@ DEFINE CLASS TimeoutCallable as Callable
     ENDPROC
 
     PROCEDURE ClearTimeout
+        IF PEMSTATUS(_VFP, "_Timeouts", 5) = .F.
+            RETURN
+        ENDIF
         IF VARTYPE(_VFP._Timeouts) != "O"
             RETURN
         ENDIF
