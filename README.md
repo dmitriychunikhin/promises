@@ -1,2 +1,5 @@
 # promises
-Loosely implementation of promises in VFP
+Implementation of promises in VFP
+
+## usage
+sample.prg
