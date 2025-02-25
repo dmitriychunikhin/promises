@@ -2,7 +2,7 @@
 * JS PROMISES IMPLEMENTATION FOR VFP
 *
 * AUTHOR : VICTOR ESPINA, DMITRY CHUNIKHIN
-* VERSION: 1.1
+* VERSION: 1.2
 *
 
 *  Public API description:
@@ -36,6 +36,22 @@
 * 
 *  JS Timeout CONCEPT IMPLEMENTATION ON VFP.
 *  USAGE: sample.prg
+* 
+*   
+*  AsyncRun (function)
+* 
+*  JS ASYNC FUNCTION CONCEPT IMPLEMENTATION ON VFP.
+*  AsyncRun input:
+*   - Callable object named Action as the first argument
+*   - Arguments from 2 to 11: user's arbitrary arguments
+*  AsyncRun return value: Promise object
+*  Action's return types:
+*   - return value of AsyncRepeat() function: Action will be executed one more time, Promise will not be fulfilled
+*   - Promise: Promise returned by AsyncRun will be resolved with resulting value of Promise returned by Action
+*              Promise being returned from AsyncRun() will be fulfilled automatically, otherwise is up to creator to fulfill the Promise
+*   - Exception: Promise returned by AsyncRun will be rejected with exception returned by Action of throwed by Action
+*   - Any other value: Promise returned by AsyncRun will be resolved with the value returned by Action
+*  USAGE: sample_asyncrun.prg
 
 
 DEFINE CLASS Callable as Custom
@@ -316,4 +332,171 @@ DEFINE CLASS _PromisesTimer as Timer
         
         This.Enabled = This._repeat
     ENDPROC    
+ENDDEFINE
+
+
+* Async execution of tasks
+FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
+    LOCAL payload, i
+    m.payload = CREATEOBJECT("Empty")
+    ADDPROPERTY(m.payload, "pcount", MAX(PCOUNT() - 1, 0))
+    ADDPROPERTY(m.payload, "p[" + TRANSFORM(m.payload.pcount) + "]")
+    FOR i = 1 TO m.payload.pcount
+        m.payload.p[m.i] = EVALUATE("m.p" + TRANSFORM(m.i))
+    ENDFOR
+
+    RETURN Promise(CREATEOBJECT("_AsyncTask", m.action, m.payload))
+ENDFUNC
+
+FUNCTION AsyncRepeat 
+    LOCAL repeat
+    m.repeat = CREATEOBJECT("empty")
+    ADDPROPERTY(m.repeat, "Class", "AsyncRepeat")
+    RETURN m.repeat
+ENDFUNC
+
+
+DEFINE CLASS _AsyncTask as Callable
+    HIDDEN _action
+    HIDDEN _payload
+    HIDDEN _resolve
+    HIDDEN _reject
+    
+    PROCEDURE Init(action as Callable, payload as Object)
+        IF VARTYPE(m.action) = "C" AND NOT EMPTY(m.action)
+            This._action = CREATEOBJECT(m.action)
+        ELSE
+            This._action = m.action
+        ENDIF
+        This._payload = m.payload
+        This._resolve = NULL
+        This._reject = NULL
+    ENDPROC
+    
+    FUNCTION call(resolve as Callable, reject as Callable)
+        IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
+            ADDPROPERTY(_VFP, "_AsyncEventLoop", NULL)
+        ENDIF
+        IF VARTYPE(_VFP._AsyncEventLoop) != "O"
+            _VFP._AsyncEventLoop = CREATEOBJECT("_AsyncEventLoop")
+        ENDIF
+        This._resolve = m.resolve
+        This._reject = m.reject
+        _VFP._AsyncEventLoop.AddTask(This)
+    ENDFUNC
+    
+    FUNCTION run
+        LOCAL lcArgs, i
+        m.lcArgs = ""
+        
+        FOR i = 1 TO This._payload.pcount
+            m.lcArgs = m.lcArgs + IIF(m.i > 1, ",", "") + "This._payload.p[" + TRANSFORM(m.i) + "]"
+        ENDFOR
+
+        LOCAL repeat, res, err
+        m.repeat = .F.
+        TRY
+            IF EMPTY(m.lcArgs)
+                m.res = This._action.call()
+            ELSE
+                m.res = This._action.call(&lcArgs)
+            ENDIF
+
+            DO CASE
+            CASE VARTYPE(m.res) = "O" AND LOWER(m.res.Class) == LOWER("AsyncRepeat")
+                m.repeat = .T.
+
+            CASE VARTYPE(m.res) = "O" AND LOWER(m.res.Class) == LOWER("Promise")
+                m.res.then(This._resolve)
+                m.res.catch(This._reject)
+
+            CASE VARTYPE(m.res) = "O" AND LOWER(m.res.BaseClass) == LOWER("Exception")
+                This._reject.call(m.res)
+
+            OTHERWISE
+                This._resolve.call(m.res)
+            ENDCASE
+        CATCH TO err
+            This._reject.call(m.err)
+        ENDTRY
+        
+        RETURN m.repeat
+    ENDFUNC
+ENDDEFINE
+
+DEFINE CLASS _AsyncEventLoop as Timer
+    Interval = 1
+    HIDDEN _tasks
+    HIDDEN nWndMsg
+    
+    PROCEDURE Init
+        This._tasks = CREATEOBJECT("Collection")
+        DECLARE LONG RegisterWindowMessage IN user32 AS WinApi_RegisterWindowMessage STRING lpString
+        This.nWndMsg = WinApi_RegisterWindowMessage("WM_AsyncEventLoop")
+        IF EMPTY(This.nWndMsg)
+            RETURN .F.
+        ENDIF
+        BINDEVENT(_VFP.HWnd, This.nWndMsg, This, "OnNextTask")
+    ENDPROC
+    
+    PROCEDURE AddTask(task as _AsyncTask)
+        This._tasks.Add(m.task)
+        This.InvokeNextTask()
+    ENDPROC
+    
+    PROCEDURE InvokeNextTask(force)
+        #define SLEEP_MAX 50
+        #define WND_QUE_FLAGS 0x0001 + 0x0002 + 0x0004 + 0x0020 + 0x0080 + 0x0400
+        
+        This.Enabled = .F.
+        
+        LOCAL wndQS
+        TRY
+            m.wndQS = WinApi_GetQueueStatus(WND_QUE_FLAGS)
+        CATCH
+            DECLARE LONG GetQueueStatus IN user32 AS WinApi_GetQueueStatus LONG flags
+            m.wndQS = WinApi_GetQueueStatus(WND_QUE_FLAGS)
+        ENDTRY
+
+        IF BITAND(m.wndQS, 0xFFFFFFFF) != 0
+            This.Interval = MAX(This.Interval + 1, SLEEP_MAX)
+            IF This.Interval < SLEEP_MAX OR m.force = .F.
+                This.Enabled = (This._tasks.Count > 0)
+                RETURN
+            ENDIF
+        ENDIF
+
+        This.Interval = 0
+
+        TRY
+            WinApi_PostMessage(_VFP.HWnd, This.nWndMsg, 0, 0)
+        CATCH
+        FINALLY
+            DECLARE LONG PostMessage IN user32 AS WinApi_PostMessage LONG hWnd, LONG Msg, LONG wParam, LONG lParam
+            WinApi_PostMessage(_VFP.HWnd, This.nWndMsg, 0, 0)
+        ENDTRY
+
+    ENDPROC
+
+    PROCEDURE Timer
+        This.InvokeNextTask(.T.)
+    ENDPROC
+    
+    PROCEDURE OnNextTask
+        LPARAMETERS hWnd, Msg, wParam, lParam
+
+        IF This._tasks.Count = 0
+            RETURN
+        ENDIF
+        
+        LOCAL task, repeat
+        m.task = This._tasks.Item(1)
+        m.repeat = m.task.run()
+        This._tasks.Remove(1)
+        IF m.repeat
+            This._tasks.Add(m.task)
+        ENDIF
+        
+        This.InvokeNextTask()
+    ENDPROC
 ENDDEFINE
