@@ -414,14 +414,14 @@ DEFINE CLASS _AsyncTask as Callable
             ENDIF
 
             DO CASE
-            CASE VARTYPE(m.res) = "O" AND LOWER(m.res.Class) == LOWER("AsyncRepeat")
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == LOWER("AsyncRepeat")
                 m.repeat = m.res
 
-            CASE VARTYPE(m.res) = "O" AND LOWER(m.res.Class) == LOWER("Promise")
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == LOWER("Promise")
                 m.res.then(This._resolve)
                 m.res.catch(This._reject)
 
-            CASE VARTYPE(m.res) = "O" AND LOWER(m.res.BaseClass) == LOWER("Exception")
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.BaseClass) = "C" AND LOWER(m.res.BaseClass) == LOWER("Exception")
                 This._reject.call(m.res)
 
             OTHERWISE
