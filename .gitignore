@@ -68,8 +68,6 @@
 *.DLL
 *.dll
 
-test*.*
-p*.*
 *.dat
 *.xml
 *.json
