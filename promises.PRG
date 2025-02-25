@@ -53,6 +53,13 @@
 *   - Any other value: Promise returned by AsyncRun will be resolved with the value returned by Action
 *  USAGE: sample_asyncrun.prg
 
+*  AsyncRepeat (function)
+* 
+*  Returned from Action routine of AsyncRun AsyncRepeat instructs Event Loop to repeat Action in given number of milliseconds
+*  AsyncRun input:
+*   - repeat delay in milliseconds
+*  USAGE: sample_asyncrun.prg
+
 
 DEFINE CLASS Callable as Custom
     FUNCTION call
@@ -335,7 +342,9 @@ DEFINE CLASS _PromisesTimer as Timer
 ENDDEFINE
 
 
-* Async execution of tasks
+
+* Async tasks & Event Loop
+
 FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
     LOCAL payload, i
     m.payload = CREATEOBJECT("Empty")
@@ -348,19 +357,21 @@ FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
     RETURN Promise(CREATEOBJECT("_AsyncTask", m.action, m.payload))
 ENDFUNC
 
-FUNCTION AsyncRepeat 
+FUNCTION AsyncRepeat(delay)
     LOCAL repeat
     m.repeat = CREATEOBJECT("empty")
     ADDPROPERTY(m.repeat, "Class", "AsyncRepeat")
+    ADDPROPERTY(m.repeat, "delay", MAX(EVL(m.delay,0),0))
     RETURN m.repeat
 ENDFUNC
-
 
 DEFINE CLASS _AsyncTask as Callable
     HIDDEN _action
     HIDDEN _payload
     HIDDEN _resolve
     HIDDEN _reject
+    runTime = NULL
+    runDelay = 0
     
     PROCEDURE Init(action as Callable, payload as Object)
         IF VARTYPE(m.action) = "C" AND NOT EMPTY(m.action)
@@ -404,7 +415,7 @@ DEFINE CLASS _AsyncTask as Callable
 
             DO CASE
             CASE VARTYPE(m.res) = "O" AND LOWER(m.res.Class) == LOWER("AsyncRepeat")
-                m.repeat = .T.
+                m.repeat = m.res
 
             CASE VARTYPE(m.res) = "O" AND LOWER(m.res.Class) == LOWER("Promise")
                 m.res.then(This._resolve)
@@ -426,26 +437,47 @@ ENDDEFINE
 
 DEFINE CLASS _AsyncEventLoop as Timer
     Interval = 1
-    HIDDEN _tasks
+    HIDDEN _tasks[1]
+    HIDDEN _tasksCnt
     HIDDEN nWndMsg
     
     PROCEDURE Init
-        This._tasks = CREATEOBJECT("Collection")
+        This._tasksCnt = 0
+        
         DECLARE LONG RegisterWindowMessage IN user32 AS WinApi_RegisterWindowMessage STRING lpString
         This.nWndMsg = WinApi_RegisterWindowMessage("WM_AsyncEventLoop")
         IF EMPTY(This.nWndMsg)
             RETURN .F.
         ENDIF
         BINDEVENT(_VFP.HWnd, This.nWndMsg, This, "OnNextTask")
+        
+        DECLARE LONG GetTickCount IN kernel32 AS WinApi_GetTickCount
+    ENDPROC
+    
+    PROCEDURE Destroy
+        This._tasksCnt = 0
+        DIMENSION This._tasks(1)
+        This._tasks[1] = NULL
     ENDPROC
     
     PROCEDURE AddTask(task as _AsyncTask)
-        This._tasks.Add(m.task)
+        This._tasksCnt = This._tasksCnt + 1
+        DIMENSION This._tasks(This._tasksCnt)
+        This._tasks[This._tasksCnt] = m.task
         This.InvokeNextTask()
     ENDPROC
     
+    PROCEDURE RemoveTask(ind)
+        This._tasksCnt = This._tasksCnt - 1
+        ADEL(This._tasks, m.ind)
+    ENDPROC
+
+    PROCEDURE Timer
+        This.InvokeNextTask(.T.)
+    ENDPROC
+    
     PROCEDURE InvokeNextTask(force)
-        #define SLEEP_MAX 50
+        #define SLEEP_MAX 10
         #define WND_QUE_FLAGS 0x0001 + 0x0002 + 0x0004 + 0x0020 + 0x0080 + 0x0400
         
         This.Enabled = .F.
@@ -458,10 +490,10 @@ DEFINE CLASS _AsyncEventLoop as Timer
             m.wndQS = WinApi_GetQueueStatus(WND_QUE_FLAGS)
         ENDTRY
 
-        IF BITAND(m.wndQS, 0xFFFFFFFF) != 0
+        IF m.wndQS != 0
             This.Interval = MAX(This.Interval + 1, SLEEP_MAX)
             IF This.Interval < SLEEP_MAX OR m.force = .F.
-                This.Enabled = (This._tasks.Count > 0)
+                This.Enabled = (This._tasksCnt > 0)
                 RETURN
             ENDIF
         ENDIF
@@ -475,28 +507,29 @@ DEFINE CLASS _AsyncEventLoop as Timer
             DECLARE LONG PostMessage IN user32 AS WinApi_PostMessage LONG hWnd, LONG Msg, LONG wParam, LONG lParam
             WinApi_PostMessage(_VFP.HWnd, This.nWndMsg, 0, 0)
         ENDTRY
-
-    ENDPROC
-
-    PROCEDURE Timer
-        This.InvokeNextTask(.T.)
     ENDPROC
     
     PROCEDURE OnNextTask
         LPARAMETERS hWnd, Msg, wParam, lParam
 
-        IF This._tasks.Count = 0
+        IF This._tasksCnt = 0
             RETURN
         ENDIF
         
         LOCAL task, repeat
-        m.task = This._tasks.Item(1)
-        m.repeat = m.task.run()
-        This._tasks.Remove(1)
-        IF m.repeat
-            This._tasks.Add(m.task)
-        ENDIF
+        m.task = This._tasks[1]
+        This.RemoveTask(1)
         
-        This.InvokeNextTask()
+        IF m.task.runDelay > 0 AND m.task.runDelay > (WinApi_GetTickCount() - NVL(m.task.runTime, 0))
+            This.AddTask(m.task)
+        ELSE
+            m.repeat = m.task.run()
+            IF VARTYPE(m.repeat) = "O"
+                m.task.runTime = WinApi_GetTickCount()
+                m.task.runDelay = m.repeat.delay
+                This.AddTask(m.task)
+            ENDIF
+        ENDIF
     ENDPROC
+    
 ENDDEFINE
