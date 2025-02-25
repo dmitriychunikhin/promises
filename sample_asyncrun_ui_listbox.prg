@@ -13,6 +13,9 @@ DEFINE CLASS SampleForm AS Form
     Caption = "Sample Form"
     Visible = .T.
     Name = "SampleForm1"
+    
+    taskList1 = NULL
+    taskList2 = NULL
 
 
     ADD OBJECT cmdFillList1 AS commandbutton WITH ;
@@ -67,15 +70,17 @@ DEFINE CLASS SampleForm AS Form
         Thisform.List1.Clear()
         Thisform.List1.ListIndex = 0
         Thisform.Label1.Refresh()
-
-        WITH AsyncRun("fnList1", Thisform, 150, "Hello, List1!")
+        
+        IF VARTYPE(Thisform.taskList1) = "O"
+            Thisform.taskList1.Stop()
+        ENDIF
+        
+        Thisform.taskList1 = AsyncRun("fnList1", Thisform, 150, "Hello, List1!")
+        WITH Thisform.taskList1.Promise.then("Then1")
             WITH .then("Then1")
-                WITH .then("Then1")
-                    .then("Then1")
-                ENDWITH
+                .then("Then1")
             ENDWITH
             .then("Then1")
-
         ENDWITH
     ENDPROC
 
@@ -84,9 +89,12 @@ DEFINE CLASS SampleForm AS Form
         Thisform.List2.ListIndex = 0
         Thisform.Label2.Refresh()
 
-        WITH AsyncRun("fnList2", Thisform, 150, "Hello, List2!")
-            .then("Then2")
-        ENDWITH
+        IF VARTYPE(Thisform.taskList2) = "O"
+            Thisform.taskList2.Stop()
+        ENDIF
+
+        Thisform.taskList2 = AsyncRun("fnList2", Thisform, 150, "Hello, List2!")
+        Thisform.tasklist2.Promise.then("Then2")
     ENDPROC
 
 
@@ -111,7 +119,7 @@ DEFINE CLASS fnList1 as Callable
         frm.List1.AddItem(TRANSFORM(This.cnt))
         frm.Label1.Refresh()
         IF This.cnt != m.cntMax
-            RETURN AsyncRepeat(100)
+            RETURN AsyncRepeat(50)
         ENDIF
         LOCAL res
         m.res = CREATEOBJECT("empty")
@@ -130,7 +138,7 @@ DEFINE CLASS fnList2 as Callable
         frm.List2.AddItem(TRANSFORM(This.cnt))
         frm.Label2.Refresh()
         IF This.cnt != m.cntMax
-            RETURN AsyncRepeat(50)
+            RETURN AsyncRepeat(40)
         ENDIF
         m.res = CREATEOBJECT("empty")
         ADDPROPERTY(m.res, "frm", m.frm)

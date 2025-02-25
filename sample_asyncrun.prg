@@ -6,7 +6,7 @@ CLEAR
 LOCAL i
 FOR i = 1 TO 100
     WITH AsyncRun("MyAsyncFunc", m.i, MAX(INT(RAND() * 1000), 1), TEXTMERGE("AsyncFunc<<m.i>>: "))
-        .then("MyPromiseThen")
+        .Promise.then("MyPromiseThen")
     ENDWITH
 ENDFOR
 
@@ -47,5 +47,3 @@ DEFINE CLASS MyPromiseThen as Callable
         RETURN m.res
     ENDFUNC
 ENDDEFINE
-
-
