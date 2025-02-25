@@ -439,10 +439,15 @@ DEFINE CLASS _AsyncEventLoop as Timer
     Interval = 1
     HIDDEN _tasks[1]
     HIDDEN _tasksCnt
+    HIDDEN _tasksInd
+    HIDDEN _tasksPending[1]
+    HIDDEN _tasksPendingCnt
     HIDDEN nWndMsg
     
     PROCEDURE Init
         This._tasksCnt = 0
+        This._tasksInd = 1
+        This._tasksPendingCnt = 0
         
         DECLARE LONG RegisterWindowMessage IN user32 AS WinApi_RegisterWindowMessage STRING lpString
         This.nWndMsg = WinApi_RegisterWindowMessage("WM_AsyncEventLoop")
@@ -458,6 +463,10 @@ DEFINE CLASS _AsyncEventLoop as Timer
         This._tasksCnt = 0
         DIMENSION This._tasks(1)
         This._tasks[1] = NULL
+
+        This._tasksPendingCnt = 0
+        DIMENSION This._tasksPending(1)
+        This._tasksPending[1] = NULL
     ENDPROC
     
     PROCEDURE AddTask(task as _AsyncTask)
@@ -466,22 +475,24 @@ DEFINE CLASS _AsyncEventLoop as Timer
         This._tasks[This._tasksCnt] = m.task
         This.InvokeNextTask()
     ENDPROC
-    
-    PROCEDURE RemoveTask(ind)
-        This._tasksCnt = This._tasksCnt - 1
-        ADEL(This._tasks, m.ind)
-    ENDPROC
 
+    PROCEDURE AddTaskPending(task as _AsyncTask)
+        This._tasksPendingCnt = This._tasksPendingCnt + 1
+        DIMENSION This._tasksPending(This._tasksPendingCnt)
+        This._tasksPending[This._tasksPendingCnt] = m.task
+        This.InvokeNextTask()
+    ENDPROC
+    
     PROCEDURE Timer
         This.InvokeNextTask(.T.)
     ENDPROC
-    
+
     PROCEDURE InvokeNextTask(force)
-        #define SLEEP_MAX 10
+        #define SLEEP_MAX 2
         #define WND_QUE_FLAGS 0x0001 + 0x0002 + 0x0004 + 0x0020 + 0x0080 + 0x0400
         
         This.Enabled = .F.
-        
+                
         LOCAL wndQS
         TRY
             m.wndQS = WinApi_GetQueueStatus(WND_QUE_FLAGS)
@@ -508,26 +519,37 @@ DEFINE CLASS _AsyncEventLoop as Timer
             WinApi_PostMessage(_VFP.HWnd, This.nWndMsg, 0, 0)
         ENDTRY
     ENDPROC
-    
+
     PROCEDURE OnNextTask
         LPARAMETERS hWnd, Msg, wParam, lParam
 
-        IF This._tasksCnt = 0
-            RETURN
+        IF This._tasksInd > This._tasksCnt
+            IF This._tasksPendingCnt = 0
+                RETURN
+            ENDIF
+            DIMENSION This._tasks(MAX(This._tasksCnt, This._tasksPendingCnt))
+            This._tasksCnt = This._tasksPendingCnt
+            ACOPY(This._tasksPending, This._tasks, 1, This._tasksPendingCnt)
+            DIMENSION This._tasksPending(1)
+            This._tasksPending[1] = NULL
+            DIMENSION This._tasksPending(This._tasksPendingCnt)
+            This._tasksInd = 1
+            This._tasksPendingCnt = 0
         ENDIF
-        
+                
         LOCAL task, repeat
-        m.task = This._tasks[1]
-        This.RemoveTask(1)
+        m.task = This._tasks[This._tasksInd]
+        This._tasks[This._tasksInd] = NULL
+        This._tasksInd = This._tasksInd + 1
         
         IF m.task.runDelay > 0 AND m.task.runDelay > (WinApi_GetTickCount() - NVL(m.task.runTime, 0))
-            This.AddTask(m.task)
+            This.AddTaskPending(m.task)
         ELSE
             m.repeat = m.task.run()
             IF VARTYPE(m.repeat) = "O"
                 m.task.runTime = WinApi_GetTickCount()
                 m.task.runDelay = m.repeat.delay
-                This.AddTask(m.task)
+                This.AddTaskPending(m.task)
             ENDIF
         ENDIF
     ENDPROC
