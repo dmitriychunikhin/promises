@@ -4,6 +4,7 @@ static int EventLoopHandlerID = 0;
 static HWND EventLoopWindowHWND = 0;
 static int EventLoopWindowMessageID = 0;
 static char* EventLoopWindowMessageName = "WM_AsyncEventLoop-9E296D7E-8563-4BD5-936A-C99DC3563AC0";
+static bool EventLoopPaused = false;
 
 int _GetValue2i(const Value& pValue)
 {
@@ -16,12 +17,13 @@ void FAR EventLoopHandler(WHandle theWindow, EventRec FAR* ev)
 {
 	if (!EventLoopWindowMessageID) return;
 	if (GetQueueStatus(QS_KEY | QS_MOUSEMOVE | QS_MOUSEBUTTON | QS_PAINT | QS_HOTKEY | QS_HOTKEY | QS_POSTMESSAGE)) return;
-
+	if (EventLoopPaused) return;
 	PostMessage(EventLoopWindowHWND, EventLoopWindowMessageID, 0, 0);
 }
 
 void FASTCALL PromisesLibInit(ParamBlk* params)
 {
+	EventLoopPaused = false;
 	if (params->pCount > 0) {
 		EventLoopWindowHWND = (HWND)_GetValue2i(params->p[0].val);
 	}
@@ -41,10 +43,22 @@ void FASTCALL PromisesLibRelease(ParamBlk* params)
 	EventLoopHandlerID = 0;
 }
 
+void FASTCALL PromisesLibEventLoopContinue(ParamBlk* params)
+{
+	EventLoopPaused = false;
+}
+
+void FASTCALL PromisesLibEventLoopPause(ParamBlk* params)
+{
+	EventLoopPaused = true;
+}
+
 
 FoxInfo myFoxInfo[] = {
 	{"PromisesLibRelease",(FPFI)PromisesLibRelease, CALLONUNLOAD, ""},
 	{"PromisesLibInit",(FPFI)PromisesLibInit, 1, ".?"},
+	{"PromisesLibEventLoopContinue",(FPFI)PromisesLibEventLoopContinue, 0, ""},
+	{"PromisesLibEventLoopPause",(FPFI)PromisesLibEventLoopPause, 0, ""},
 };
 
 extern "C" {

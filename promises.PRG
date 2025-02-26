@@ -461,7 +461,11 @@ DEFINE CLASS _AsyncEventLoop as Custom
     PROCEDURE Init
         This._tasks = CREATEOBJECT("Collection")
 
-        SET LIBRARY TO promises.fll ADDITIVE
+        LOCAL lcAppPath, lcAppFolder
+        m.lcAppPath = STREXTRACT(SYS(16), " ", "", 2, 2)
+        m.lcAppFolder = JUSTPATH(m.lcAppPath)
+        
+        SET LIBRARY TO &lcAppFolder\promises.fll ADDITIVE
         
         This.nEventLoopWndMsg = PromisesLibInit(_VFP.HWnd)
         IF EMPTY(This.nEventLoopWndMsg)
@@ -473,11 +477,16 @@ DEFINE CLASS _AsyncEventLoop as Custom
      ENDPROC
     
     PROCEDURE Destroy
-        RELEASE LIBRARY promises.fll
+        LOCAL lcAppPath, lcAppFolder
+        m.lcAppPath = STREXTRACT(SYS(16), " ", "", 2, 2)
+        m.lcAppFolder = JUSTPATH(m.lcAppPath)
+
+        RELEASE LIBRARY &lcAppFolder\promises.fll
     ENDPROC
     
     PROCEDURE AddTask(task as _AsyncTask)
         This._tasks.Add(m.task)
+        PromisesLibEventLoopContinue()
     ENDPROC
 
     PROCEDURE RemoveTask(ind)
@@ -501,6 +510,7 @@ DEFINE CLASS _AsyncEventLoop as Custom
         LPARAMETERS hWnd, Msg, wParam, lParam
 
         IF This._tasks.Count = 0
+            PromisesLibEventLoopPause()
             RETURN
         ENDIF
         
