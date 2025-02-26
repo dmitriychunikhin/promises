@@ -2,7 +2,7 @@
 * JS PROMISES IMPLEMENTATION FOR VFP
 *
 * AUTHOR : VICTOR ESPINA, DMITRY CHUNIKHIN
-* VERSION: 1.1
+* VERSION: 1.2
 *
 
 *  Public API description:
@@ -36,6 +36,37 @@
 * 
 *  JS Timeout CONCEPT IMPLEMENTATION ON VFP.
 *  USAGE: sample.prg
+* 
+*   
+*  AsyncRun (function)
+* 
+*  JS ASYNC FUNCTION CONCEPT IMPLEMENTATION ON VFP.
+*  AsyncRun input:
+*   - Callable object named Action as the first argument
+*   - Arguments from 2 to 11: user's arbitrary arguments
+*  AsyncRun return value: Promise object
+*  Action's return types:
+*   - return value of AsyncRepeat() function: Action will be executed one more time, Promise will not be fulfilled
+*   - Promise: Promise returned by AsyncRun will be resolved with resulting value of Promise returned by Action
+*              If Promise is returned from AsyncRun() it will be fulfilled automatically, otherwise it is up to creator to fulfill the Promise
+*   - Exception: Promise returned by AsyncRun will be rejected with exception returned by Action of throwed by Action
+*   - Any other value: Promise returned by AsyncRun will be resolved with a value returned by Action
+*  USAGE: sample_asyncrun.prg
+* 
+*   
+*  AsyncStop (function)
+* 
+*  Accepts Promise returned by AsyncRun as an input argument
+*  Stop execution of async task associated with the Promise
+*
+*
+*  AsyncRepeat (function)
+* 
+*  Returned from Action routine of AsyncRun AsyncRepeat instructs Event Loop to repeat Action in a given number of milliseconds
+*  AsyncRun input:
+*   - repeat delay in milliseconds
+*  USAGE: sample_asyncrun.prg
+
 
 
 DEFINE CLASS Callable as Custom
@@ -70,7 +101,7 @@ DEFINE CLASS Promise AS Custom
             m.executor = CREATEOBJECT(m.executor)
         ENDIF
         IF VARTYPE(m.executor) = "O"
-            m.executor.call(CREATEOBJECT("_PromiseExecutorResolve", This), CREATEOBJECT("_PromiseExecutorReject", This))
+            m.executor.call(CREATEOBJECT("PromiseExecutorResolve", This), CREATEOBJECT("PromiseExecutorReject", This))
         ENDIF
     ENDPROC
 
@@ -176,7 +207,7 @@ DEFINE CLASS Promise AS Custom
 ENDDEFINE  && Promise
 
 
-DEFINE CLASS _PromiseExecutorResolve as Callable
+DEFINE CLASS PromiseExecutorResolve as Callable
     HIDDEN _promise
     
     PROCEDURE Init(promise as Promise)
@@ -193,7 +224,7 @@ DEFINE CLASS _PromiseExecutorResolve as Callable
 ENDDEFINE
 
 
-DEFINE CLASS _PromiseExecutorReject as Callable
+DEFINE CLASS PromiseExecutorReject as Callable
     HIDDEN _promise
     
     PROCEDURE Init(promise as Promise)
@@ -283,17 +314,20 @@ DEFINE CLASS _PromisesTimer as Timer
     HIDDEN _callback
     HIDDEN _callbackArgs[1]
     HIDDEN _callbackArgsCnt
+    HIDDEN _callbackArgsMacro
     
     PROCEDURE Init(repeat as Boolean, func as Callable, interval as Integer, funcArgsCnt, funcArg1, funcArg2, funcArg3, funcArg4, funcArg5)
         This._repeat = m.repeat
         This._callback = m.func
         This.Interval = m.interval
         This._callbackArgsCnt = m.funcArgsCnt
+        This._callbackArgsMacro = ""
         IF This._callbackArgsCnt > 0
             DIMENSION This._callbackArgs(This._callbackArgsCnt)
             LOCAL i
             FOR i = 1 TO This._callbackArgsCnt
                 This._callbackArgs[m.i] = EVALUATE("m.funcArg" + TRANSFORM(m.i))
+                This._callbackArgsMacro = This._callbackArgsMacro + IIF(m.i > 1, ",", "") + "This._callbackArgs[" + TRANSFORM(m.i) + "]"
             ENDFOR
         ENDIF
         This.Enabled = .T.
@@ -302,11 +336,7 @@ DEFINE CLASS _PromisesTimer as Timer
     PROCEDURE Timer
         This.Enabled = .F.
         LOCAL lcArgs
-        m.lcArgs = ""
-        LOCAL i
-        FOR i = 1 TO This._callbackArgsCnt
-            m.lcArgs = m.lcArgs + IIF(m.i > 1, ",", "") + "This._callbackArgs[" + TRANSFORM(m.i) + "]"
-        ENDFOR
+        m.lcArgs = This._callbackArgsMacro
 
         IF EMPTY(m.lcArgs)
             This._callback.call()
@@ -316,4 +346,179 @@ DEFINE CLASS _PromisesTimer as Timer
         
         This.Enabled = This._repeat
     ENDPROC    
+ENDDEFINE
+
+
+
+* Async tasks & Event Loop
+
+FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
+    LOCAL payload, i
+    m.payload = CREATEOBJECT("Empty")
+    ADDPROPERTY(m.payload, "pcount", MAX(PCOUNT() - 1, 0))
+    ADDPROPERTY(m.payload, "p[" + TRANSFORM(m.payload.pcount) + "]")
+    ADDPROPERTY(m.payload, "pMacro", "")
+    FOR i = 1 TO m.payload.pcount
+        m.payload.p[m.i] = EVALUATE("m.p" + TRANSFORM(m.i))
+        m.payload.pMacro = m.payload.pMacro + IIF(m.i > 1, ",", "") + "This._payload.p[" + TRANSFORM(m.i) + "]"
+    ENDFOR
+
+    LOCAL promise
+    m.promise = Promise()
+    CREATEOBJECT("_AsyncTask", m.action, m.payload, m.promise)
+    RETURN m.promise
+ENDFUNC
+
+FUNCTION AsyncStop(asyncRunPromise as Promise)
+    IF VARTYPE(m.asyncRunPromise) != "O"
+        RETURN
+    ENDIF
+    
+    IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
+        RETURN
+    ENDIF
+    IF VARTYPE(_VFP._AsyncEventLoop) != "O"
+        RETURN
+    ENDIF
+
+    _VFP._AsyncEventLoop.StopTask(m.asyncRunPromise)
+ENDFUNC
+
+FUNCTION AsyncRepeat(delay)
+    LOCAL repeat
+    m.repeat = CREATEOBJECT("empty")
+    ADDPROPERTY(m.repeat, "Class", "AsyncRepeat")
+    ADDPROPERTY(m.repeat, "delay", MAX(EVL(m.delay,0),0))
+    RETURN m.repeat
+ENDFUNC
+
+
+DEFINE CLASS _AsyncTask as Callable
+    _action = NULL
+    _payload = NULL
+    _promise = NULL
+    _runTime = NULL
+    _runDelay = 0
+    
+    PROCEDURE Init(action as Callable, payload as Object, promise as Promise)
+        IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
+            ADDPROPERTY(_VFP, "_AsyncEventLoop", NULL)
+        ENDIF
+        IF VARTYPE(_VFP._AsyncEventLoop) != "O"
+            _VFP._AsyncEventLoop = CREATEOBJECT("_AsyncEventLoop")
+        ENDIF
+        
+        IF VARTYPE(m.action) = "C" AND NOT EMPTY(m.action)
+            This._action = CREATEOBJECT(m.action)
+        ELSE
+            This._action = m.action
+        ENDIF
+        This._payload = m.payload
+        This._promise = m.promise
+        _VFP._AsyncEventLoop.AddTask(This)
+    ENDPROC
+
+    FUNCTION RunAction
+        LOCAL lcArgs
+        m.lcArgs = This._payload.pMacro
+        
+        LOCAL repeat, res, err
+        m.repeat = .F.
+        TRY
+            IF EMPTY(m.lcArgs)
+                m.res = This._action.call()
+            ELSE
+                m.res = This._action.call(&lcArgs)
+            ENDIF
+
+            DO CASE
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == LOWER("AsyncRepeat")
+                m.repeat = m.res
+
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == LOWER("Promise")
+                m.res.then(CREATEOBJECT("PromiseExecutorResolve", This._promise))
+                m.res.catch(CREATEOBJECT("PromiseExecutorReject", This._promise))
+
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.BaseClass) = "C" AND LOWER(m.res.BaseClass) == LOWER("Exception")
+                This._promise.reject(m.res)
+
+            OTHERWISE
+                This._promise.resolve(m.res)
+            ENDCASE
+        CATCH TO err
+            This._promise.reject(m.err)
+        ENDTRY
+        
+        RETURN m.repeat
+    ENDFUNC
+ENDDEFINE
+
+
+DEFINE CLASS _AsyncEventLoop as Custom
+    HIDDEN nEventLoopWndMsg
+    HIDDEN _tasks
+    
+    PROCEDURE Init
+        This._tasks = CREATEOBJECT("Collection")
+
+        SET LIBRARY TO promises.fll ADDITIVE
+        
+        This.nEventLoopWndMsg = PromisesLibInit(_VFP.HWnd)
+        IF EMPTY(This.nEventLoopWndMsg)
+            RETURN .F.
+        ENDIF
+        BINDEVENT(_VFP.HWnd, This.nEventLoopWndMsg, This, "RunTask", 4)
+        
+        DECLARE LONG GetTickCount IN kernel32 AS WinApi_GetTickCount
+     ENDPROC
+    
+    PROCEDURE Destroy
+        RELEASE LIBRARY promises.fll
+    ENDPROC
+    
+    PROCEDURE AddTask(task as _AsyncTask)
+        This._tasks.Add(m.task)
+    ENDPROC
+
+    PROCEDURE RemoveTask(ind)
+        This._tasks.Remove(m.ind)
+    ENDPROC
+    
+    PROCEDURE StopTask(promise as Promise)
+        LOCAL i, task
+        m.i = 0
+        DO WHILE m.i < This._tasks.Count
+            m.i = m.i + 1
+            m.task = This._tasks.Item(m.i)
+            IF m.task._promise = m.promise
+                This.RemoveTask(m.i)
+                EXIT
+            ENDIF
+        ENDDO
+    ENDPROC
+    
+    PROCEDURE RunTask
+        LPARAMETERS hWnd, Msg, wParam, lParam
+
+        IF This._tasks.Count = 0
+            RETURN
+        ENDIF
+        
+        LOCAL task, repeat
+        m.task = This._tasks.Item(1)
+        This.RemoveTask(1)
+        
+        IF m.task._runDelay > 0 AND m.task._runDelay > (WinApi_GetTickCount() - NVL(m.task._runTime, 0))
+            This.AddTask(m.task)
+        ELSE
+            m.repeat = m.task.RunAction()
+            
+            IF VARTYPE(m.repeat) = "O"
+                m.task._runTime = WinApi_GetTickCount()
+                m.task._runDelay = m.repeat.delay
+                This.AddTask(m.task)
+            ENDIF
+        ENDIF
+    ENDPROC
+    
 ENDDEFINE

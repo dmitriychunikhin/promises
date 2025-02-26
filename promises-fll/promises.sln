@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual C++ Express 2010
+Project("{EDB90042-253A-4C3B-B635-4A23FE328FEF}") = "promises", "promises.vcxproj", "{AD36FB99-8B47-40F9-9F4D-7269D3104D26}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AD36FB99-8B47-40F9-9F4D-7269D3104D26}.Debug|Win32.ActiveCfg = Debug|Win32
+		{AD36FB99-8B47-40F9-9F4D-7269D3104D26}.Debug|Win32.Build.0 = Debug|Win32
+		{AD36FB99-8B47-40F9-9F4D-7269D3104D26}.Release|Win32.ActiveCfg = Release|Win32
+		{AD36FB99-8B47-40F9-9F4D-7269D3104D26}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
