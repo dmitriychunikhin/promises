@@ -16,10 +16,10 @@
 *.MNX
 *.mpr
 *.MPR
-*.vct
-*.VCT
-*.vcx
-*.VCX
+#*.vct
+#*.VCT
+#*.vcx
+#*.VCX
 *.fxp
 *.FXP
 
