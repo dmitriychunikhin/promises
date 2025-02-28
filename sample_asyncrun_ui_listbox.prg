@@ -1,3 +1,4 @@
+CLEAR
 SET PROCEDURE TO promises.prg
 
 WITH CREATEOBJECT("SampleForm")
@@ -103,6 +104,8 @@ DEFINE CLASS SampleForm AS Form
     ENDPROC
 
     PROCEDURE Destroy
+        AsyncStop(Thisform.promiseList1)
+        AsyncStop(Thisform.promiseList2)
     ENDPROC
 ENDDEFINE
 
@@ -129,7 +132,6 @@ DEFINE CLASS fnList2 as Callable
     cnt = 0
     PROCEDURE call
         LPARAMETERS frm, cntMax as Integer, msg as String
-
         This.cnt = This.cnt + 1
         frm.List2.AddItem(TRANSFORM(This.cnt))
         frm.Label2.Refresh()

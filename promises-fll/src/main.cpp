@@ -21,7 +21,7 @@ void FAR EventLoopHandler(WHandle theWindow, EventRec FAR* ev)
 	PostMessage(EventLoopWindowHWND, EventLoopWindowMessageID, 0, 0);
 }
 
-void FASTCALL PromisesLibInit(ParamBlk* params)
+void FASTCALL PromisesLib_Init(ParamBlk* params)
 {
 	EventLoopPaused = false;
 	if (params->pCount > 0) {
@@ -36,29 +36,35 @@ void FASTCALL PromisesLibInit(ParamBlk* params)
 	_RetInt(EventLoopWindowMessageID, 15);
 }
 
-void FASTCALL PromisesLibRelease(ParamBlk* params)
+void FASTCALL PromisesLib_Release(ParamBlk* params)
 {
 	if (!EventLoopHandlerID) return;
 	_DeActivateIdle(EventLoopHandlerID);
 	EventLoopHandlerID = 0;
 }
 
-void FASTCALL PromisesLibEventLoopContinue(ParamBlk* params)
+void FASTCALL PromisesLib_EventLoopContinue(ParamBlk* params)
 {
 	EventLoopPaused = false;
 }
 
-void FASTCALL PromisesLibEventLoopPause(ParamBlk* params)
+void FASTCALL PromisesLib_EventLoopPause(ParamBlk* params)
 {
 	EventLoopPaused = true;
 }
 
+void FASTCALL PromisesLib_GetTickCount(ParamBlk* params)
+{
+	_RetFloat(GetTickCount(), 10, 0);
+}
+
 
 FoxInfo myFoxInfo[] = {
-	{"PromisesLibRelease",(FPFI)PromisesLibRelease, CALLONUNLOAD, ""},
-	{"PromisesLibInit",(FPFI)PromisesLibInit, 1, ".?"},
-	{"PromisesLibEventLoopContinue",(FPFI)PromisesLibEventLoopContinue, 0, ""},
-	{"PromisesLibEventLoopPause",(FPFI)PromisesLibEventLoopPause, 0, ""},
+	{"PromisesLib_Release",(FPFI)PromisesLib_Release, CALLONUNLOAD, ""},
+	{"PromisesLib_Init",(FPFI)PromisesLib_Init, 1, ".?"},
+	{"PromisesLib_EventLoopContinue",(FPFI)PromisesLib_EventLoopContinue, 0, ""},
+	{"PromisesLib_EventLoopPause",(FPFI)PromisesLib_EventLoopPause, 0, ""},
+	{"PromisesLib_GetTickCount",(FPFI)PromisesLib_GetTickCount, 0, ""},
 };
 
 extern "C" {

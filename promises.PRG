@@ -397,6 +397,7 @@ DEFINE CLASS _AsyncTask as Callable
     _action = NULL
     _payload = NULL
     _promise = NULL
+    _parentTask = NULL
     _runTime = NULL
     _runDelay = 0
     
@@ -421,7 +422,7 @@ DEFINE CLASS _AsyncTask as Callable
     FUNCTION RunAction
         LOCAL lcArgs
         m.lcArgs = This._payload.pMacro
-        
+
         LOCAL repeat, res, err
         m.repeat = .F.
         TRY
@@ -457,9 +458,11 @@ ENDDEFINE
 DEFINE CLASS _AsyncEventLoop as Custom
     HIDDEN nEventLoopWndMsg
     HIDDEN _tasks
+    HIDDEN _runningTask
     
     PROCEDURE Init
         This._tasks = CREATEOBJECT("Collection")
+        This._runningTask = NULL
 
         LOCAL lcAppPath, lcAppFolder
         m.lcAppPath = STREXTRACT(SYS(16), " ", "", 2, 2)
@@ -467,14 +470,12 @@ DEFINE CLASS _AsyncEventLoop as Custom
         
         SET LIBRARY TO &lcAppFolder\promises.fll ADDITIVE
         
-        This.nEventLoopWndMsg = PromisesLibInit(_VFP.HWnd)
+        This.nEventLoopWndMsg = PromisesLib_Init(_VFP.HWnd)
         IF EMPTY(This.nEventLoopWndMsg)
             RETURN .F.
         ENDIF
         BINDEVENT(_VFP.HWnd, This.nEventLoopWndMsg, This, "RunTask", 4)
-        
-        DECLARE LONG GetTickCount IN kernel32 AS WinApi_GetTickCount
-     ENDPROC
+    ENDPROC
     
     PROCEDURE Destroy
         LOCAL lcAppPath, lcAppFolder
@@ -486,13 +487,16 @@ DEFINE CLASS _AsyncEventLoop as Custom
     
     PROCEDURE AddTask(task as _AsyncTask)
         This._tasks.Add(m.task)
-        PromisesLibEventLoopContinue()
+        IF VARTYPE(This._runningTask) = "O"
+            m.task._parentTask = This._runningTask
+        ENDIF
+        PromisesLib_EventLoopContinue()
     ENDPROC
 
     PROCEDURE RemoveTask(ind)
         This._tasks.Remove(m.ind)
     ENDPROC
-    
+
     PROCEDURE StopTask(promise as Promise)
         LOCAL i, task
         m.i = 0
@@ -501,16 +505,26 @@ DEFINE CLASS _AsyncEventLoop as Custom
             m.task = This._tasks.Item(m.i)
             IF m.task._promise = m.promise
                 This.RemoveTask(m.i)
-                EXIT
+                LOOP
             ENDIF
+            
+            LOCAL parentTask
+            m.parentTask = m.task._parentTask
+            DO WHILE VARTYPE(m.parentTask) = "O"
+                IF m.parentTask._promise = m.promise
+                    This.RemoveTask(m.i)
+                    EXIT
+                ENDIF
+                m.parentTask = m.parentTask._parentTask
+            ENDDO
         ENDDO
     ENDPROC
-    
+
     PROCEDURE RunTask
         LPARAMETERS hWnd, Msg, wParam, lParam
 
         IF This._tasks.Count = 0
-            PromisesLibEventLoopPause()
+            PromisesLib_EventLoopPause()
             RETURN
         ENDIF
         
@@ -518,13 +532,18 @@ DEFINE CLASS _AsyncEventLoop as Custom
         m.task = This._tasks.Item(1)
         This.RemoveTask(1)
         
-        IF m.task._runDelay > 0 AND m.task._runDelay > (WinApi_GetTickCount() - NVL(m.task._runTime, 0))
+        IF m.task._runDelay > 0 AND m.task._runDelay > (PromisesLib_GetTickCount() - NVL(m.task._runTime, 0))
             This.AddTask(m.task)
         ELSE
-            m.repeat = m.task.RunAction()
+            This._runningTask = m.task
+            TRY
+                m.repeat = m.task.RunAction()
+            FINALLY
+                This._runningTask = NULL
+            ENDTRY
             
-            IF VARTYPE(m.repeat) = "O"
-                m.task._runTime = WinApi_GetTickCount()
+            IF VARTYPE(m.repeat) = "O" 
+                m.task._runTime = PromisesLib_GetTickCount()
                 m.task._runDelay = m.repeat.delay
                 This.AddTask(m.task)
             ENDIF

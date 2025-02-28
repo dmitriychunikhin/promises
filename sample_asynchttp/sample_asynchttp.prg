@@ -1,4 +1,3 @@
-
 #define SAMPLE_URL "https://download.microsoft.com/download/f/3/a/f3a6af84-da23-40a5-8d1c-49cc10c8e76f/NDP472-KB4054530-x86-x64-AllOS-ENU.exe"
 #define SAMPLE_URL "https://www.google.com/"
 
@@ -60,12 +59,7 @@ DEFINE CLASS MyDownloadForm as async_progressbar_frm
         Thisform.UpdateState()
     ENDFUNC
     
-    FUNCTION cmdCancel.Click
-        Thisform.StopDownload()
-        DODEFAULT()
-    ENDFUNC
-    
-    FUNCTION QueryUnload
+    FUNCTION Destroy
         This.StopDownload()
     ENDFUNC
     
@@ -84,34 +78,42 @@ FUNCTION fetch(url, requestParams, onProgress as Callable)
 ENDFUNC
 
 DEFINE CLASS fetch as Callable
-    HIDDEN xmlHTTP
     FUNCTION call(url, requestParams, onProgress as Callable)
-        IF VARTYPE(This.xmlHTTP) != "O"
-            This.xmlHTTP = CREATEOBJECT("Microsoft.XMLHTTP")
-            This.xmlHTTP.Open("GET", m.url, .T.)
-            IF This.xmlHTTP.readyState != HTTP_OPENED
-                THROW "The request could not be initialized"
-            ENDIF
-            
-            This.xmlHTTP.SetRequestHeader("Cache-Control", "no-cache")
-            declare integer DeleteUrlCacheEntry in WinInet.DLL string
-            DeleteUrlCacheEntry(m.url)
-            
-            This.xmlHTTP.Send()
+        LOCAL xmlHTTP
+        m.xmlHTTP = CREATEOBJECT("Microsoft.XMLHTTP")
+        m.xmlHTTP.Open("GET", m.url, .T.)
+        IF m.xmlHTTP.readyState != HTTP_OPENED
+            THROW "The request could not be initialized"
         ENDIF
+        
+        m.xmlHTTP.SetRequestHeader("Cache-Control", "no-cache")
+        declare integer DeleteUrlCacheEntry in WinInet.DLL string
+        DeleteUrlCacheEntry(m.url)
+        
+        m.xmlHTTP.Send()
 
-        IF This.xmlHTTP.readyState != HTTP_DONE
+        RETURN AsyncRun("FetchResultProcessor", m.xmlHTTP, onProgress)
+    ENDFUNC
+ENDDEFINE
+
+DEFINE CLASS FetchResultProcessor as Callable
+    HIDDEN xmlHTTP
+    FUNCTION call(xmlHTTP, onProgress as Callable)
+        IF VARTYPE(This.xmlHTTP) != "O"
+            This.xmlHTTP = m.xmlHTTP
+        ENDIF
+        IF m.xmlHTTP.readyState != HTTP_DONE
             IF VARTYPE(m.onProgress) = "O"
-                m.onProgress.call(This.xmlHTTP.readyState)
+                m.onProgress.call(m.xmlHTTP.readyState)
             ENDIF
             RETURN AsyncRepeat(100)
         ENDIF
         
-        IF This.xmlHTTP.Status != HTTP_STATUS_OK
-            THROW TEXTMERGE("Request ended with error status = <<This.xmlHTTP.Status>>")
+        IF m.xmlHTTP.Status != HTTP_STATUS_OK
+            THROW TEXTMERGE("Request ended with error status = <<m.xmlHTTP.Status>>")
         ENDIF
         
-        RETURN This.xmlHTTP.StatusText
+        RETURN m.xmlHTTP.StatusText
     ENDFUNC
     
     FUNCTION destroy
