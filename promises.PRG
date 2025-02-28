@@ -347,13 +347,6 @@ ENDDEFINE
 * Async tasks & Event Loop
 
 FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
-    IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
-        ADDPROPERTY(_VFP, "_AsyncEventLoop", NULL)
-    ENDIF
-    IF VARTYPE(_VFP._AsyncEventLoop) != "O"
-        _VFP._AsyncEventLoop = CREATEOBJECT("_AsyncEventLoop")
-    ENDIF
-
     LOCAL payload, i
     m.payload = CREATEOBJECT("Empty")
     ADDPROPERTY(m.payload, "pcount", MAX(PCOUNT() - 1, 0))
@@ -364,11 +357,7 @@ FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
         m.payload.pMacro = m.payload.pMacro + IIF(m.i > 1, ",", "") + "This._payload.p[" + TRANSFORM(m.i) + "]"
     ENDFOR
 
-    LOCAL promise, asyncRunPromise
-    m.promise = Promise()
-    m.asyncRunPromise = CREATEOBJECT("_AsyncRunPromise", m.promise)
-    _VFP._AsyncEventLoop.AddTask(CREATEOBJECT("_AsyncTask", m.action, m.payload, m.promise))
-    RETURN m.asyncRunPromise
+    RETURN CREATEOBJECT("_AsyncRunPromise", m.action, m.payload) 
 ENDFUNC
 
 FUNCTION AsyncRepeat(delay)
@@ -382,8 +371,20 @@ ENDFUNC
 
 DEFINE CLASS _AsyncRunPromise as Custom
     HIDDEN _promise
-    PROCEDURE Init(promise)
-        This._promise = m.promise
+    HIDDEN _task
+    
+    PROCEDURE Init(action as Callable, payload as Object)
+        IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
+            ADDPROPERTY(_VFP, "_AsyncEventLoop", NULL)
+        ENDIF
+        IF VARTYPE(_VFP._AsyncEventLoop) != "O"
+            _VFP._AsyncEventLoop = CREATEOBJECT("_AsyncEventLoop")
+        ENDIF
+        
+        This._promise = Promise()
+        This._task = CREATEOBJECT("_AsyncTask", m.action, m.payload, This._promise)
+        
+        _VFP._AsyncEventLoop.AddTask(This._task)
     ENDPROC
     
     PROCEDURE Destroy
@@ -393,12 +394,13 @@ DEFINE CLASS _AsyncRunPromise as Custom
         IF VARTYPE(_VFP._AsyncEventLoop) != "O"
             RETURN
         ENDIF
-
-        _VFP._AsyncEventLoop.StopTask(This._promise)
+        IF VARTYPE(This._task) = "O"
+            _VFP._AsyncEventLoop.RemoveTask(This._task._taskId)
+        ENDIF
     ENDPROC
     
     PROCEDURE THIS_ACCESS(member)
-        IF INLIST(LOWER(m.member), "_promise")
+        IF INLIST(LOWER(m.member), "_promise", "_task")
             RETURN This
         ENDIF
         RETURN This._promise
@@ -407,14 +409,14 @@ ENDDEFINE
 
 
 DEFINE CLASS _AsyncTask as Callable
-    _action = NULL
-    _payload = NULL
-    _promise = NULL
-    _parentTask = NULL
-    _actionPromise = NULL
+    _taskId = ""
     _runTime = NULL
     _runDelay = 0
-    
+
+    HIDDEN _action
+    HIDDEN _payload
+    HIDDEN _promise
+    HIDDEN _actionPromise
     
     PROCEDURE Init(action as Callable, payload as Object, promise as Promise)        
         IF VARTYPE(m.action) = "C" AND NOT EMPTY(m.action)
@@ -424,11 +426,14 @@ DEFINE CLASS _AsyncTask as Callable
         ENDIF
         This._payload = m.payload
         This._promise = m.promise
+        This._taskId = SYS(2015)
     ENDPROC
-
+    
     FUNCTION RunAction
         LOCAL lcArgs
         m.lcArgs = This._payload.pMacro
+
+        This._actionPromise = NULL
 
         LOCAL repeat, res, err
         m.repeat = .F.
@@ -466,11 +471,9 @@ ENDDEFINE
 DEFINE CLASS _AsyncEventLoop as Custom
     HIDDEN nEventLoopWndMsg
     HIDDEN _tasks
-    HIDDEN _runningTask
     
     PROCEDURE Init
         This._tasks = CREATEOBJECT("Collection")
-        This._runningTask = NULL
 
         LOCAL lcAppPath, lcAppFolder
         m.lcAppPath = STREXTRACT(SYS(16), " ", "", 2, 2)
@@ -494,38 +497,18 @@ DEFINE CLASS _AsyncEventLoop as Custom
     ENDPROC
     
     PROCEDURE AddTask(task as _AsyncTask)
-        This._tasks.Add(m.task)
-        IF VARTYPE(This._runningTask) = "O"
-            m.task._parentTask = This._runningTask
-        ENDIF
+        This._tasks.Add(m.task, m.task._taskId)
         PromisesLib_EventLoopContinue()
     ENDPROC
 
     PROCEDURE RemoveTask(ind)
-        This._tasks.Remove(m.ind)
-    ENDPROC
-
-    PROCEDURE StopTask(promise as Promise)
-        LOCAL i, task
-        m.i = 0
-        DO WHILE m.i < This._tasks.Count
-            m.i = m.i + 1
-            m.task = This._tasks.Item(m.i)
-            IF m.task._promise = m.promise
-                This.RemoveTask(m.i)
-                LOOP
+        IF VARTYPE(m.ind) = "C"
+            m.ind = This._tasks.GetKey(m.ind)
+            IF m.ind = 0
+                RETURN
             ENDIF
-            
-            LOCAL parentTask
-            m.parentTask = m.task._parentTask
-            DO WHILE VARTYPE(m.parentTask) = "O"
-                IF m.parentTask._promise = m.promise
-                    This.RemoveTask(m.i)
-                    EXIT
-                ENDIF
-                m.parentTask = m.parentTask._parentTask
-            ENDDO
-        ENDDO
+        ENDIF
+        This._tasks.Remove(m.ind)
     ENDPROC
 
     PROCEDURE RunTask
@@ -543,12 +526,7 @@ DEFINE CLASS _AsyncEventLoop as Custom
         IF m.task._runDelay > 0 AND m.task._runDelay > (PromisesLib_GetTickCount() - NVL(m.task._runTime, 0))
             This.AddTask(m.task)
         ELSE
-            This._runningTask = m.task
-            TRY
-                m.repeat = m.task.RunAction()
-            FINALLY
-                This._runningTask = NULL
-            ENDTRY
+            m.repeat = m.task.RunAction()
             
             IF VARTYPE(m.repeat) = "O" 
                 m.task._runTime = PromisesLib_GetTickCount()
