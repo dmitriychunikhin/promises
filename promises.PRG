@@ -54,12 +54,6 @@
 *  USAGE: sample_asyncrun.prg
 * 
 *   
-*  AsyncStop (function)
-* 
-*  Accepts Promise returned by AsyncRun as an input argument
-*  Stop execution of async task associated with the Promise
-*
-*
 *  AsyncRepeat (function)
 * 
 *  Returned from Action routine of AsyncRun AsyncRepeat instructs Event Loop to repeat Action in a given number of milliseconds
@@ -353,6 +347,13 @@ ENDDEFINE
 * Async tasks & Event Loop
 
 FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
+    IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
+        ADDPROPERTY(_VFP, "_AsyncEventLoop", NULL)
+    ENDIF
+    IF VARTYPE(_VFP._AsyncEventLoop) != "O"
+        _VFP._AsyncEventLoop = CREATEOBJECT("_AsyncEventLoop")
+    ENDIF
+
     LOCAL payload, i
     m.payload = CREATEOBJECT("Empty")
     ADDPROPERTY(m.payload, "pcount", MAX(PCOUNT() - 1, 0))
@@ -363,25 +364,11 @@ FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
         m.payload.pMacro = m.payload.pMacro + IIF(m.i > 1, ",", "") + "This._payload.p[" + TRANSFORM(m.i) + "]"
     ENDFOR
 
-    LOCAL promise
+    LOCAL promise, asyncRunPromise
     m.promise = Promise()
-    CREATEOBJECT("_AsyncTask", m.action, m.payload, m.promise)
-    RETURN m.promise
-ENDFUNC
-
-FUNCTION AsyncStop(asyncRunPromise as Promise)
-    IF VARTYPE(m.asyncRunPromise) != "O"
-        RETURN
-    ENDIF
-    
-    IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
-        RETURN
-    ENDIF
-    IF VARTYPE(_VFP._AsyncEventLoop) != "O"
-        RETURN
-    ENDIF
-
-    _VFP._AsyncEventLoop.StopTask(m.asyncRunPromise)
+    m.asyncRunPromise = CREATEOBJECT("_AsyncRunPromise", m.promise)
+    _VFP._AsyncEventLoop.AddTask(CREATEOBJECT("_AsyncTask", m.action, m.payload, m.promise))
+    RETURN m.asyncRunPromise
 ENDFUNC
 
 FUNCTION AsyncRepeat(delay)
@@ -393,22 +380,43 @@ FUNCTION AsyncRepeat(delay)
 ENDFUNC
 
 
+DEFINE CLASS _AsyncRunPromise as Custom
+    HIDDEN _promise
+    PROCEDURE Init(promise)
+        This._promise = m.promise
+    ENDPROC
+    
+    PROCEDURE Destroy
+        IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
+            RETURN
+        ENDIF
+        IF VARTYPE(_VFP._AsyncEventLoop) != "O"
+            RETURN
+        ENDIF
+
+        _VFP._AsyncEventLoop.StopTask(This._promise)
+    ENDPROC
+    
+    PROCEDURE THIS_ACCESS(member)
+        IF INLIST(LOWER(m.member), "_promise")
+            RETURN This
+        ENDIF
+        RETURN This._promise
+    ENDPROC
+ENDDEFINE
+
+
 DEFINE CLASS _AsyncTask as Callable
     _action = NULL
     _payload = NULL
     _promise = NULL
     _parentTask = NULL
+    _actionPromise = NULL
     _runTime = NULL
     _runDelay = 0
     
-    PROCEDURE Init(action as Callable, payload as Object, promise as Promise)
-        IF PEMSTATUS(_VFP, "_AsyncEventLoop", 5) = .F.
-            ADDPROPERTY(_VFP, "_AsyncEventLoop", NULL)
-        ENDIF
-        IF VARTYPE(_VFP._AsyncEventLoop) != "O"
-            _VFP._AsyncEventLoop = CREATEOBJECT("_AsyncEventLoop")
-        ENDIF
-        
+    
+    PROCEDURE Init(action as Callable, payload as Object, promise as Promise)        
         IF VARTYPE(m.action) = "C" AND NOT EMPTY(m.action)
             This._action = CREATEOBJECT(m.action)
         ELSE
@@ -416,7 +424,6 @@ DEFINE CLASS _AsyncTask as Callable
         ENDIF
         This._payload = m.payload
         This._promise = m.promise
-        _VFP._AsyncEventLoop.AddTask(This)
     ENDPROC
 
     FUNCTION RunAction
@@ -439,6 +446,7 @@ DEFINE CLASS _AsyncTask as Callable
             CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == LOWER("Promise")
                 m.res.then(CREATEOBJECT("PromiseExecutorResolve", This._promise))
                 m.res.catch(CREATEOBJECT("PromiseExecutorReject", This._promise))
+                This._actionPromise = m.res &&hold ref to action promise to protect nested task from being destroyed after exit from this method
 
             CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.BaseClass) = "C" AND LOWER(m.res.BaseClass) == LOWER("Exception")
                 This._promise.reject(m.res)

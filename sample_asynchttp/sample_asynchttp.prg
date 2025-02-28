@@ -31,7 +31,6 @@ DEFINE CLASS MyDownloadForm as async_progressbar_frm
     ENDFUNC
     
     FUNCTION StopDownload
-        AsyncStop(This.fetchPromise)
         This.fetchPromise = NULL
     ENDFUNC
     

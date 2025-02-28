@@ -3,9 +3,12 @@ SET PROCEDURE TO promises.prg
 CLEAR
 =RAND(SECONDS())
 
+PUBLIC paTasks[1]
 LOCAL i
 FOR i = 1 TO 100
-    WITH AsyncRun("MyAsyncFunc", MAX(INT(RAND() * 5000), 1), TEXTMERGE("AsyncFunc<<m.i>>: "))
+    DIMENSION paTasks(m.i)
+    paTasks[m.i] = AsyncRun("MyAsyncFunc", MAX(INT(RAND() * 5000), 1), TEXTMERGE("AsyncFunc<<m.i>>: "))
+    WITH paTasks[m.i]
         .then("MyPromiseThen")
     ENDWITH
 ENDFOR

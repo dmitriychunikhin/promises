@@ -72,8 +72,6 @@ DEFINE CLASS SampleForm AS Form
         Thisform.List1.ListIndex = 0
         Thisform.Label1.Refresh()
         
-        AsyncStop(Thisform.promiseList1)
-       
         Thisform.promiseList1 = AsyncRun("fnList1", Thisform, 150, "Hello, List1!")
         WITH Thisform.promiseList1.then("Then1")
             WITH .then("Then1")
@@ -87,8 +85,6 @@ DEFINE CLASS SampleForm AS Form
         Thisform.List2.Clear()
         Thisform.List2.ListIndex = 0
         Thisform.Label2.Refresh()
-
-        AsyncStop(Thisform.promiseList2)
 
         Thisform.promiseList2 = AsyncRun("fnList2", Thisform, 150, "Hello, List2!")
         Thisform.promiseList2.then("Then2")
@@ -104,8 +100,8 @@ DEFINE CLASS SampleForm AS Form
     ENDPROC
 
     PROCEDURE Destroy
-        AsyncStop(Thisform.promiseList1)
-        AsyncStop(Thisform.promiseList2)
+        Thisform.promiseList1 = NULL
+        Thisform.promiseList2 = NULL
     ENDPROC
 ENDDEFINE
 
