@@ -406,7 +406,7 @@ FUNCTION AsyncRun(action as Callable, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
     LOCAL payload, i
     m.payload = CREATEOBJECT("Empty")
     ADDPROPERTY(m.payload, "pcount", MAX(PCOUNT() - 1, 0))
-    ADDPROPERTY(m.payload, "p[" + TRANSFORM(m.payload.pcount) + "]")
+    ADDPROPERTY(m.payload, "p[" + TRANSFORM(EVL(m.payload.pcount,1)) + "]")
     ADDPROPERTY(m.payload, "pMacro", "")
     FOR i = 1 TO m.payload.pcount
         m.payload.p[m.i] = EVALUATE("m.p" + TRANSFORM(m.i))
