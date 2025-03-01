@@ -451,7 +451,7 @@ DEFINE CLASS _AsyncRunPromise as Custom
             RETURN
         ENDIF
         IF VARTYPE(This._task) = "O"
-            _VFP._AsyncEventLoop.RemoveTaskById(This._task._taskId)
+            _VFP._AsyncEventLoop.StopTask(This._task)
         ENDIF
     ENDPROC
     
@@ -466,6 +466,7 @@ ENDDEFINE
 
 DEFINE CLASS _AsyncTask as Callable
     _taskId = ""
+    _stopped = .F.
     _runTime = NULL
     _runDelay = 0
 
@@ -553,6 +554,10 @@ DEFINE CLASS _AsyncEventLoop as Custom
     ENDPROC
     
     PROCEDURE AddTask(task as _AsyncTask)
+        IF m.task._stopped
+            * task is stopped here if StopTask is effected in task.RunAction inside RunTask
+            RETURN
+        ENDIF
         This._tasks.Add(m.task, m.task._taskId)
         PromisesLib_EventLoopContinue()
     ENDPROC
@@ -561,10 +566,11 @@ DEFINE CLASS _AsyncEventLoop as Custom
         This._tasks.Remove(m.ind)
     ENDPROC
 
-    PROCEDURE RemoveTaskById(taskId)
+    PROCEDURE StopTask(m.task)
+        m.task._stopped = .T.
         LOCAL ind
-        m.ind = This._tasks.GetKey(m.taskId)
-        IF m.ind > 0
+        m.ind = This._tasks.GetKey(m.task._taskId)
+        IF m.ind > 0 && task key is not found here if StopTask is effected in task.RunAction inside RunTask
             This._tasks.Remove(m.ind)
         ENDIF
     ENDPROC
