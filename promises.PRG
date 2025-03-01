@@ -451,7 +451,7 @@ DEFINE CLASS _AsyncRunPromise as Custom
             RETURN
         ENDIF
         IF VARTYPE(This._task) = "O"
-            _VFP._AsyncEventLoop.RemoveTask(This._task._taskId)
+            _VFP._AsyncEventLoop.RemoveTaskById(This._task._taskId)
         ENDIF
     ENDPROC
     
@@ -558,13 +558,15 @@ DEFINE CLASS _AsyncEventLoop as Custom
     ENDPROC
 
     PROCEDURE RemoveTask(ind)
-        IF VARTYPE(m.ind) = "C"
-            m.ind = This._tasks.GetKey(m.ind)
-            IF m.ind = 0
-                RETURN
-            ENDIF
-        ENDIF
         This._tasks.Remove(m.ind)
+    ENDPROC
+
+    PROCEDURE RemoveTaskById(taskId)
+        LOCAL ind
+        m.ind = This._tasks.GetKey(m.taskId)
+        IF m.ind > 0
+            This._tasks.Remove(m.ind)
+        ENDIF
     ENDPROC
 
     PROCEDURE RunTask
