@@ -533,9 +533,9 @@ DEFINE CLASS _AsyncEventLoop as Custom
 
         LOCAL lcAppPath, lcAppFolder
         m.lcAppPath = STREXTRACT(SYS(16), " ", "", 2, 2)
-        m.lcAppFolder = JUSTPATH(m.lcAppPath)
+        m.lcAppFolder = ADDBS(JUSTPATH(m.lcAppPath))
         
-        SET LIBRARY TO &lcAppFolder\promises.fll ADDITIVE
+        SET LIBRARY TO &lcAppFolder.promises.fll ADDITIVE
         
         This.nEventLoopWndMsg = PromisesLib_Init(_VFP.HWnd)
         IF EMPTY(This.nEventLoopWndMsg)
@@ -547,9 +547,9 @@ DEFINE CLASS _AsyncEventLoop as Custom
     PROCEDURE Destroy
         LOCAL lcAppPath, lcAppFolder
         m.lcAppPath = STREXTRACT(SYS(16), " ", "", 2, 2)
-        m.lcAppFolder = JUSTPATH(m.lcAppPath)
+        m.lcAppFolder = ADDBS(JUSTPATH(m.lcAppPath))
 
-        RELEASE LIBRARY &lcAppFolder\promises.fll
+        RELEASE LIBRARY &lcAppFolder.promises.fll
     ENDPROC
     
     PROCEDURE AddTask(task as _AsyncTask)
