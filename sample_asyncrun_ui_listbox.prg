@@ -17,6 +17,8 @@ DEFINE CLASS SampleForm AS Form
     
     promiseList1 = NULL
     promiseList2 = NULL
+    ADD OBJECT fnList1 as Callable
+    ADD OBJECT Then1 as Callable
 
 
     ADD OBJECT cmdFillList1 AS commandbutton WITH ;
@@ -72,12 +74,12 @@ DEFINE CLASS SampleForm AS Form
         Thisform.List1.ListIndex = 0
         Thisform.Label1.Refresh()
         
-        Thisform.promiseList1 = AsyncRun("fnList1", Thisform, 150, "Hello, List1!")
-        WITH Thisform.promiseList1.then("Then1")
-            WITH .then("Then1")
-                .then("Then1")
+        Thisform.promiseList1 = AsyncRun(Thisform.fnList1, 150, "Hello, List1!")
+        WITH Thisform.promiseList1.then(Thisform.Then1)
+            WITH .then(Thisform.Then1)
+                .then(Thisform.Then1)
             ENDWITH
-            .then("Then1")
+            .then(Thisform.Then1)
         ENDWITH
     ENDPROC
 
@@ -88,6 +90,24 @@ DEFINE CLASS SampleForm AS Form
 
         Thisform.promiseList2 = AsyncRun("fnList2", Thisform, 150, "Hello, List2!")
         Thisform.promiseList2.then("Then2")
+    ENDPROC
+
+    PROCEDURE fnList1.call
+        LPARAMETERS cntMax as Integer, msg as String
+        Thisform.List1.AddItem(TRANSFORM(Thisform.List1.ListCount + 1))
+        Thisform.Label1.Refresh()
+        IF Thisform.List1.ListCount != m.cntMax
+            RETURN AsyncRepeat(50)
+        ENDIF
+        RETURN m.msg
+    ENDPROC
+
+    PROCEDURE Then1.call
+        LPARAMETERS msg
+        m.msg = TRANSFORM(m.msg) + " then " + SYS(2015)
+        Thisform.List1.AddItem(m.msg)
+        m.Thisform.Label1.Refresh()
+        RETURN m.msg
     ENDPROC
 
 
@@ -105,24 +125,6 @@ DEFINE CLASS SampleForm AS Form
     ENDPROC
 ENDDEFINE
 
-DEFINE CLASS fnList1 as Callable
-    cnt = 0
-    PROCEDURE call
-        LPARAMETERS frm, cntMax as Integer, msg as String
-
-        This.cnt = This.cnt + 1
-        frm.List1.AddItem(TRANSFORM(This.cnt))
-        frm.Label1.Refresh()
-        IF This.cnt != m.cntMax
-            RETURN AsyncRepeat(50)
-        ENDIF
-        LOCAL res
-        m.res = CREATEOBJECT("empty")
-        ADDPROPERTY(m.res, "frm", m.frm)
-        ADDPROPERTY(m.res, "msg", m.msg)
-        RETURN m.res
-    ENDPROC
-ENDDEFINE
 
 DEFINE CLASS fnList2 as Callable
     cnt = 0
@@ -141,15 +143,6 @@ DEFINE CLASS fnList2 as Callable
     ENDPROC
 ENDDEFINE
 
-DEFINE CLASS Then1 as Callable
-    PROCEDURE call
-        LPARAMETERS value
-        m.value.msg = TRANSFORM(m.value.msg) + " then " + SYS(2015)
-        m.value.frm.List1.AddItem(m.value.msg)
-        m.value.frm.Label1.Refresh()
-        RETURN m.value
-    ENDPROC
-ENDDEFINE
 
 DEFINE CLASS Then2 as Callable
     PROCEDURE call

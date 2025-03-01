@@ -14,6 +14,18 @@
 *  USAGE: sample.prg
 *  
 *  
+*  FunCall (function)
+*
+*  Callable wrapper for any VFP function or method
+*  FunCall allows up to 10 arguments to be passed to underlying function|method
+*  FunCall input:
+*   - funcName as String: name of the function or method
+*        method name must by provided in a This.methodName pattern
+*   - thisObj as Object: "This" binding for method
+*  FunCall return value: Callable object
+*  USAGE: sample_asynchttp.prg
+*  
+*  
 *  Promise (function)
 *
 *  RETURNS A NEW INSTANCE OF Promise CLASS
@@ -44,7 +56,7 @@
 *  AsyncRun input:
 *   - Callable object named Action as the first argument
 *   - Arguments from 2 to 11: user's arbitrary arguments
-*  AsyncRun return value: Promise object
+*  AsyncRun return value: Promise object. To stop async procedure execution just release the Promise returned by AsyncRun
 *  Action's return types:
 *   - return value of AsyncRepeat() function: Action will be executed one more time, Promise will not be fulfilled
 *   - Promise: Promise returned by AsyncRun will be resolved with resulting value of Promise returned by Action
@@ -65,6 +77,51 @@
 
 DEFINE CLASS Callable as Custom
     FUNCTION call
+    ENDFUNC
+ENDDEFINE
+
+FUNCTION FunCall(funcName as String, thisObj as Object)
+    RETURN CREATEOBJECT("FunCall", m.funcName, m.thisObj)
+ENDFUNC
+
+DEFINE CLASS FunCall as Callable
+    HIDDEN _funcName
+    HIDDEN _thisObj
+    
+    PROCEDURE Init(funcName as String, thisObj as Object)
+        This._funcName = m.funcName
+        This._thisObj = m.thisObj
+    ENDPROC
+    
+    FUNCTION call(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
+        LOCAL funcName, thisObj, pcount
+        m.funcName = STRTRAN(This._funcName, "This.", "m.thisObj.", 1, 1, 1)
+        m.thisObj = This._thisObj
+        m.pcount = PCOUNT()
+        DO CASE
+        CASE m.pcount = 0
+            RETURN &funcName()
+        CASE m.pcount = 1
+            RETURN &funcName(m.p1)
+        CASE m.pcount = 2
+            RETURN &funcName(m.p1, m.p2)
+        CASE m.pcount = 3
+            RETURN &funcName(m.p1, m.p2, m.p3)
+        CASE m.pcount = 4
+            RETURN &funcName(m.p1, m.p2, m.p3, m.p4)
+        CASE m.pcount = 5
+            RETURN &funcName(m.p1, m.p2, m.p3, m.p4, m.p5)
+        CASE m.pcount = 6
+            RETURN &funcName(m.p1, m.p2, m.p3, m.p4, m.p5, m.p6)
+        CASE m.pcount = 7
+            RETURN &funcName(m.p1, m.p2, m.p3, m.p4, m.p5, m.p6, m.p7)
+        CASE m.pcount = 8
+            RETURN &funcName(m.p1, m.p2, m.p3, m.p4, m.p5, m.p6, m.p7, m.p8)
+        CASE m.pcount = 9
+            RETURN &funcName(m.p1, m.p2, m.p3, m.p4, m.p5, m.p6, m.p7, m.p8, m.p9)
+        CASE m.pcount = 10
+            RETURN &funcName(m.p1, m.p2, m.p3, m.p4, m.p5, m.p6, m.p7, m.p8, m.p9, m.p10)
+        ENDCASE
     ENDFUNC
 ENDDEFINE
 
@@ -341,7 +398,6 @@ DEFINE CLASS _PromisesTimer as Timer
         This.Enabled = This._repeat
     ENDPROC    
 ENDDEFINE
-
 
 
 * Async tasks & Event Loop
