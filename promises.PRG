@@ -502,15 +502,15 @@ DEFINE CLASS _AsyncTask as Callable
             ENDIF
 
             DO CASE
-            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == LOWER("AsyncRepeat")
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == "asyncrepeat"
                 m.repeat = m.res
 
-            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == LOWER("Promise")
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.Class) = "C" AND LOWER(m.res.Class) == "promise"
                 m.res.then(CREATEOBJECT("PromiseExecutorResolve", This._promise))
                 m.res.catch(CREATEOBJECT("PromiseExecutorReject", This._promise))
                 This._actionPromise = m.res &&hold ref to action promise to protect nested task from being destroyed after exit from this method
 
-            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.BaseClass) = "C" AND LOWER(m.res.BaseClass) == LOWER("Exception")
+            CASE VARTYPE(m.res) = "O" AND VARTYPE(m.res.BaseClass) = "C" AND LOWER(m.res.BaseClass) == "exception"
                 This._promise.reject(m.res)
 
             OTHERWISE

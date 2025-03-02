@@ -49,7 +49,7 @@ DEFINE CLASS MyDownloadForm as async_progressbar_frm
     ENDFUNC
 
     FUNCTION onError(err)
-        Thisform.cpbarcaption = NVL(m.err.UserValue,'') + " " + NVL(m.err.details,'')
+        Thisform.cpbarcaption = "Error: " + NVL(m.err.UserValue,'') + " " + NVL(m.err.details,'')
         Thisform.npbarvalue = 0
         Thisform.UpdateState()
     ENDFUNC
