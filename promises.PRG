@@ -467,8 +467,8 @@ ENDDEFINE
 DEFINE CLASS _AsyncTask as Callable
     _taskId = ""
     _stopped = .F.
-    _runTime = NULL
-    _runDelay = 0
+    _repStart = NULL
+    _repDelay = 0
 
     HIDDEN _action
     HIDDEN _payload
@@ -528,9 +528,13 @@ ENDDEFINE
 DEFINE CLASS _AsyncEventLoop as Custom
     HIDDEN nEventLoopWndMsg
     HIDDEN _tasks
+    HIDDEN _tasksRep
+    HIDDEN _lastRepStart
     
     PROCEDURE Init
         This._tasks = CREATEOBJECT("Collection")
+        This._tasksRep = CREATEOBJECT("Collection")
+        This._lastRepStart = 0
 
         LOCAL lcAppPath, lcAppFolder
         m.lcAppPath = STREXTRACT(SYS(16), " ", "", 2, 2)
@@ -562,8 +566,52 @@ DEFINE CLASS _AsyncEventLoop as Custom
         PromisesLib_EventLoopContinue()
     ENDPROC
 
-    PROCEDURE RemoveTask(ind)
-        This._tasks.Remove(m.ind)
+    PROCEDURE AddTaskRepeat(task as _AsyncTask)
+        IF m.task._stopped
+            * task is stopped here if StopTask is effected in task.RunAction inside RunTask
+            RETURN
+        ENDIF
+        
+        m.task._repStart = PromisesLib_GetTickCount()
+        IF This._lastRepStart > m.task._repStart && GetTickCount wraps over zero
+            LOCAL i, itask
+            FOR m.i = 1 TO This._tasksRep.Count
+                m.itask = This._tasksRep.Item(m.i)
+                m.itask._repStart = 0
+                m.itask._repDelay = 0
+                This.AddTask(m.itask)
+            ENDFOR
+            This._tasksRep.Remove(-1)
+        ENDIF
+        This._lastRepStart = m.task._repStart
+        
+        LOCAL nextRun, l, i, r, itask
+        m.nextRun = m.task._repStart + m.task._repDelay
+        m.l = 0
+        m.r = This._tasksRep.Count
+        DO WHILE m.l < m.r - 1
+            m.i = INT((m.l + m.r) / 2)
+            m.itask = This._tasksRep.Item(m.i)
+            DO CASE
+            CASE m.itask._repStart + m.itask._repDelay = m.nextRun
+                m.l = m.i
+                m.r = m.i
+            CASE m.itask._repStart + m.itask._repDelay < m.nextRun
+                m.l = m.i
+            OTHERWISE
+                m.r = m.i
+            ENDCASE
+        ENDDO
+        IF This._tasksRep.Count = 0
+            This._tasksRep.Add(m.task, m.task._taskId)
+        ELSE
+            m.itask = This._tasksRep.Item(m.r)
+            IF m.itask._repStart + m.itask._repDelay <= m.nextRun
+                This._tasksRep.Add(m.task, m.task._taskId, , m.r)
+            ELSE
+                This._tasksRep.Add(m.task, m.task._taskId, m.r)
+            ENDIF
+        ENDIF
     ENDPROC
 
     PROCEDURE StopTask(m.task)
@@ -573,31 +621,39 @@ DEFINE CLASS _AsyncEventLoop as Custom
         IF m.ind > 0 && task key is not found here if StopTask is effected in task.RunAction inside RunTask
             This._tasks.Remove(m.ind)
         ENDIF
+        m.ind = This._tasksRep.GetKey(m.task._taskId)
+        IF m.ind > 0 && task key is not found here if StopTask is effected in task.RunAction inside RunTask
+            This._tasksRep.Remove(m.ind)
+        ENDIF
     ENDPROC
 
     PROCEDURE RunTask
         LPARAMETERS hWnd, Msg, wParam, lParam
 
-        IF This._tasks.Count = 0
+        LOCAL task, idle
+        DO CASE
+        CASE This._tasks.Count > 0
+            m.task = This._tasks.Item(1)
+            This._tasks.Remove(1)
+        CASE This._tasksRep.Count > 0
+            m.task = This._tasksRep.Item(1)
+            m.idle = MAX(PromisesLib_GetTickCount() - m.task._repStart, 0)
+            IF m.task._repDelay > m.idle
+                PromisesLib_EventLoopPause(m.task._repDelay - m.idle)
+                RETURN
+            ENDIF
+            This._tasksRep.Remove(1)
+        OTHERWISE
             PromisesLib_EventLoopPause()
             RETURN
-        ENDIF
+        ENDCASE
         
-        LOCAL task, repeat
-        m.task = This._tasks.Item(1)
-        This.RemoveTask(1)
+        LOCAL repeat
+        m.repeat = m.task.RunAction()
         
-        IF m.task._runDelay > 0 AND m.task._runDelay > (PromisesLib_GetTickCount() - NVL(m.task._runTime, 0))
-            This.AddTask(m.task)
-        ELSE
-            m.repeat = m.task.RunAction()
-            
-            IF VARTYPE(m.repeat) = "O" 
-                m.task._runTime = PromisesLib_GetTickCount()
-                m.task._runDelay = m.repeat.delay
-                This.AddTask(m.task)
-            ENDIF
+        IF VARTYPE(m.repeat) = "O" 
+            m.task._repDelay = m.repeat.delay
+            This.AddTaskRepeat(m.task)
         ENDIF
     ENDPROC
-    
 ENDDEFINE

@@ -1,10 +1,13 @@
 #include <pro_ext.h>
+#include <stdint.h>
 
 static int EventLoopHandlerID = 0;
 static HWND EventLoopWindowHWND = 0;
 static int EventLoopWindowMessageID = 0;
 static char* EventLoopWindowMessageName = "WM_AsyncEventLoop-9E296D7E-8563-4BD5-936A-C99DC3563AC0";
-static bool EventLoopPaused = false;
+static uint64_t EventLoopPausedStart = 0;
+static uint32_t EventLoopPausedDelay = 0;
+static uint32_t EventLoopPausedInfinite = UINT32_MAX;
 
 int _GetValue2i(const Value& pValue)
 {
@@ -16,14 +19,19 @@ int _GetValue2i(const Value& pValue)
 void FAR EventLoopHandler(WHandle theWindow, EventRec FAR* ev)
 {
 	if (!EventLoopWindowMessageID) return;
+	if (EventLoopPausedDelay == EventLoopPausedInfinite) return;
+	if (EventLoopPausedDelay) {
+		uint64_t now = GetTickCount();
+		if (EventLoopPausedStart < now && (EventLoopPausedStart + EventLoopPausedDelay) > now) return;
+	}
 	if (GetQueueStatus(QS_KEY | QS_MOUSEMOVE | QS_MOUSEBUTTON | QS_PAINT | QS_HOTKEY | QS_HOTKEY | QS_POSTMESSAGE)) return;
-	if (EventLoopPaused) return;
 	PostMessage(EventLoopWindowHWND, EventLoopWindowMessageID, 0, 0);
 }
 
 void FASTCALL PromisesLib_Init(ParamBlk* params)
 {
-	EventLoopPaused = false;
+	EventLoopPausedStart = 0;
+	EventLoopPausedDelay = 0;
 	if (params->pCount > 0) {
 		EventLoopWindowHWND = (HWND)_GetValue2i(params->p[0].val);
 	}
@@ -45,12 +53,17 @@ void FASTCALL PromisesLib_Release(ParamBlk* params)
 
 void FASTCALL PromisesLib_EventLoopContinue(ParamBlk* params)
 {
-	EventLoopPaused = false;
+	EventLoopPausedStart = 0;
+	EventLoopPausedDelay = 0;
 }
 
 void FASTCALL PromisesLib_EventLoopPause(ParamBlk* params)
 {
-	EventLoopPaused = true;
+	EventLoopPausedStart = GetTickCount();
+	EventLoopPausedDelay = EventLoopPausedInfinite;
+	if (params->pCount > 0) {
+		EventLoopPausedDelay = _GetValue2i(params->p[0].val);
+	}
 }
 
 void FASTCALL PromisesLib_GetTickCount(ParamBlk* params)
@@ -63,7 +76,7 @@ FoxInfo myFoxInfo[] = {
 	{"PromisesLib_Release",(FPFI)PromisesLib_Release, CALLONUNLOAD, ""},
 	{"PromisesLib_Init",(FPFI)PromisesLib_Init, 1, ".?"},
 	{"PromisesLib_EventLoopContinue",(FPFI)PromisesLib_EventLoopContinue, 0, ""},
-	{"PromisesLib_EventLoopPause",(FPFI)PromisesLib_EventLoopPause, 0, ""},
+	{"PromisesLib_EventLoopPause",(FPFI)PromisesLib_EventLoopPause, 1, ".?"},
 	{"PromisesLib_GetTickCount",(FPFI)PromisesLib_GetTickCount, 0, ""},
 };
 
