@@ -20,17 +20,21 @@ DEFINE CLASS MyDownloadForm as async_progressbar_frm
     fetchPromise = NULL
     Caption = "HTTP download"
     
+    ADD OBJECT onProgress as Callable
+    ADD OBJECT onFinish as Callable
+    ADD OBJECT onError as Callable
+    
     FUNCTION StartDownload
-        This.fetchPromise = fetch(SAMPLE_URL, NULL, FunCall("This.onProgress", This))
-        This.fetchPromise.then(FunCall("This.onFinish", This))
-        This.fetchPromise.catch(FunCall("This.onError", This))
+        This.fetchPromise = fetch(SAMPLE_URL, NULL, This.onProgress)
+        This.fetchPromise.then(This.onFinish)
+        This.fetchPromise.catch(This.onError)
     ENDFUNC
     
     FUNCTION StopDownload
         This.fetchPromise = NULL
     ENDFUNC
     
-    FUNCTION onProgress(readyState)
+    FUNCTION onProgress.call(readyState)
         Thisform.cpbarcaption = ICASE(m.readyState = 3, 'Loading...', m.readyState = 4, 'Request is Completed', '')
         Thisform.npbarvalue = EVL(Thisform.npbarvalue,0) + 1
         IF m.readyState = 3 AND Thisform.npbarvalue >= 100
@@ -42,13 +46,13 @@ DEFINE CLASS MyDownloadForm as async_progressbar_frm
         Thisform.UpdateState()
     ENDFUNC
 
-    FUNCTION onFinish(statusText)
+    FUNCTION onFinish.call(statusText)
         Thisform.cpbarcaption = "Download is completed with statusText: " + NVL(m.statusText,"")
         Thisform.npbarvalue = 100
         Thisform.UpdateState()
     ENDFUNC
 
-    FUNCTION onError(err)
+    FUNCTION onError.call(err)
         Thisform.cpbarcaption = "Error: " + NVL(m.err.UserValue,'') + " " + NVL(m.err.details,'')
         Thisform.npbarvalue = 0
         Thisform.UpdateState()
